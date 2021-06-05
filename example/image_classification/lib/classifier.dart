@@ -8,7 +8,6 @@ import 'package:tflite_flutter_helper/tflite_flutter_helper.dart';
 
 abstract class Classifier {
   late Interpreter interpreter;
-  late InterpreterOptions _interpreterOptions;
 
   var logger = Logger();
 
@@ -20,36 +19,24 @@ abstract class Classifier {
 
   TfLiteType _outputType = TfLiteType.uint8;
 
-  final String _labelsFileName = 'assets/labels.txt';
-
-  final int _labelsLength = 1001;
-
   late var _probabilityProcessor;
 
-  late List<String> labels;
-
-  String get modelName;
+  late List<String> labels = [];
 
   NormalizeOp get preProcessNormalizeOp;
   NormalizeOp get postProcessNormalizeOp;
 
-  Classifier({int? numThreads}) {
-    _interpreterOptions = InterpreterOptions();
-
-    if (numThreads != null) {
-      _interpreterOptions.threads = numThreads;
-    }
-
+  Classifier(
+      {required Interpreter interpreter,
+      int? numThreads,
+      required List<String> labels}) {
+    this.interpreter = interpreter;
+    this.labels = labels;
     loadModel();
-    loadLabels();
   }
 
   Future<void> loadModel() async {
     try {
-      interpreter =
-          await Interpreter.fromAsset(modelName, options: _interpreterOptions);
-      print('Interpreter Created Successfully');
-
       _inputShape = interpreter.getInputTensor(0).shape;
       _outputShape = interpreter.getOutputTensor(0).shape;
       _outputType = interpreter.getOutputTensor(0).type;
@@ -59,15 +46,6 @@ abstract class Classifier {
           TensorProcessorBuilder().add(postProcessNormalizeOp).build();
     } catch (e) {
       print('Unable to create interpreter, Caught Exception: ${e.toString()}');
-    }
-  }
-
-  Future<void> loadLabels() async {
-    labels = await FileUtil.loadLabels(_labelsFileName);
-    if (labels.length == _labelsLength) {
-      print('Labels loaded successfully');
-    } else {
-      print('Unable to load labels');
     }
   }
 
@@ -86,6 +64,9 @@ abstract class Classifier {
     if (interpreter == null) {
       throw StateError('Cannot run inference, Intrepreter is null');
     }
+    if (labels.length == 0) {
+      throw StateError('Cannot run inference, labels not present');
+    }
     final pres = DateTime.now().millisecondsSinceEpoch;
     _inputImage = TensorImage.fromImage(image);
     _inputImage = _preProcess();
@@ -102,6 +83,7 @@ abstract class Classifier {
     Map<String, double> labeledProb = TensorLabel.fromList(
             labels, _probabilityProcessor.process(_outputBuffer))
         .getMapWithFloatValue();
+    print("labeledProb: $labeledProb");
     final pred = getTopProbability(labeledProb);
 
     return Category(pred.key, pred.value);
